@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SecondBrain.Core.Interfaces;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
@@ -13,11 +14,16 @@ namespace SecondBrain.Telegram;
 public class TelegramBotService
 {
     private readonly ITelegramBotClient _botClient;
+    private readonly IMessageClassifier _messageClassifier;
     private readonly ILogger<TelegramBotService> _logger;
 
-    public TelegramBotService(ITelegramBotClient botClient, ILogger<TelegramBotService> logger)
+    public TelegramBotService(
+        ITelegramBotClient botClient, 
+        IMessageClassifier messageClassifier,
+        ILogger<TelegramBotService> logger)
     {
         _botClient = botClient;
+        _messageClassifier = messageClassifier;
         _logger = logger;
     }
 
@@ -25,18 +31,13 @@ public class TelegramBotService
     /// Запускает процесс Long Polling для прослушивания входящих обновлений от Telegram.
     /// Метод не блокирует выполнение, StartReceiving запускает фоновую задачу внутри себя.
     /// </summary>
-    /// <param name="cancellationToken">Токен отмены для остановки прослушивания.</param>
     public void StartReceiving(CancellationToken cancellationToken)
     {
-        // Настройка параметров получения обновлений.
-        // Пустой массив AllowedUpdates означает, что мы хотим получать все типы обновлений.
         var receiverOptions = new ReceiverOptions
         {
             AllowedUpdates = []
         };
 
-        // Запуск приема обновлений.
-        // Передаем делегаты для обработки успешных обновлений и ошибок.
         _botClient.StartReceiving(
             updateHandler: HandleUpdateAsync,
             errorHandler: HandleErrorAsync,
@@ -53,18 +54,22 @@ public class TelegramBotService
     private async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
     {
         // Извлекаем сообщение и его текст.
-        // Если это не сообщение или в нем нет текста (например, это картинка или системное событие), просто игнорируем.
         if (update.Message is not { } message || message.Text is not { } messageText)
             return;
 
         var chatId = message.Chat.Id;
         _logger.LogInformation("Received message '{MessageText}' in chat {ChatId}.", messageText, chatId);
 
-        // Реализация логики MVP 1 (Echo-bot):
-        // Отправляем обратно полученный текст с префиксом "Echo:"
+        // Передаем текст в классификатор (Gemini)
+        var category = await _messageClassifier.ClassifyAsync(messageText, cancellationToken);
+
+        // Формируем ответ с указанием определенной категории
+        var responseText = $"[{category}] Вы написали: {messageText}";
+
+        // Отправляем ответ пользователю
         await botClient.SendMessage(
             chatId: chatId,
-            text: $"Echo: {messageText}",
+            text: responseText,
             cancellationToken: cancellationToken);
     }
 
@@ -75,9 +80,7 @@ public class TelegramBotService
     {
         var errorMessage = exception switch
         {
-            // Ошибки, возвращаемые самим API Telegram (например, неверный токен, блокировка бота)
             ApiRequestException apiRequestException => $"Telegram API Error:\n[{apiRequestException.ErrorCode}]\n{apiRequestException.Message}",
-            // Прочие исключения (например, сетевые проблемы)
             _ => exception.ToString()
         };
 

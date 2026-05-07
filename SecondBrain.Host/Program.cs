@@ -1,30 +1,33 @@
+using SecondBrain.Core.Interfaces;
 using SecondBrain.Host;
+using SecondBrain.Integrations.Gemini;
 using SecondBrain.Telegram;
 using Telegram.Bot;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Извлекаем токен из конфигурации. В рабочей среде он должен храниться безопасно (например, в User Secrets или переменных окружения).
+// --- Настройка Telegram ---
 var botToken = builder.Configuration["Telegram:BotToken"];
 if (string.IsNullOrWhiteSpace(botToken))
 {
-    // Завершаем работу с понятной ошибкой, если токен не задан.
     throw new InvalidOperationException("Telegram:BotToken is not configured in appsettings.json or User Secrets.");
 }
 
-// Регистрируем ITelegramBotClient с использованием IHttpClientFactory (рекомендуемый подход для избежания проблем с сокетами)
 builder.Services.AddHttpClient("telegram_bot_client")
     .AddTypedClient<ITelegramBotClient>((httpClient, sp) =>
     {
-        // Опции клиента, куда передается токен
         TelegramBotClientOptions options = new(botToken);
         return new TelegramBotClient(options, httpClient);
     });
 
-// Регистрируем наш сервис как Singleton (существует в единственном экземпляре на протяжении работы приложения)
-builder.Services.AddSingleton<TelegramBotService>();
+// --- Настройка Gemini ---
+builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection("Gemini"));
 
-// Добавляем фоновый Worker, который будет управлять жизненным циклом бота
+// Регистрируем классификатор (HttpClient больше не нужен, используется официальный SDK)
+builder.Services.AddSingleton<IMessageClassifier, GeminiMessageClassifier>();
+
+// --- Регистрация сервисов ---
+builder.Services.AddSingleton<TelegramBotService>();
 builder.Services.AddHostedService<Worker>();
 
 var host = builder.Build();
