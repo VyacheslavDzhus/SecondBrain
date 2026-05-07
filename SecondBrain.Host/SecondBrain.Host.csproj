@@ -17,4 +17,10 @@
     <ProjectReference Include="..\SecondBrain.Telegram\SecondBrain.Telegram.csproj" />
     <ProjectReference Include="..\SecondBrain.Integrations\SecondBrain.Integrations.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="routing.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>

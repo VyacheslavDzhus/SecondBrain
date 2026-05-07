@@ -1,9 +1,12 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SecondBrain.Core.Interfaces;
+using SecondBrain.Domain;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 
 namespace SecondBrain.Telegram;
 
@@ -15,22 +18,21 @@ public class TelegramBotService
 {
     private readonly ITelegramBotClient _botClient;
     private readonly IMessageClassifier _messageClassifier;
+    private readonly RoutingOptions _routingOptions;
     private readonly ILogger<TelegramBotService> _logger;
 
     public TelegramBotService(
         ITelegramBotClient botClient, 
         IMessageClassifier messageClassifier,
+        IOptions<RoutingOptions> routingOptions,
         ILogger<TelegramBotService> logger)
     {
         _botClient = botClient;
         _messageClassifier = messageClassifier;
+        _routingOptions = routingOptions.Value;
         _logger = logger;
     }
 
-    /// <summary>
-    /// Запускает процесс Long Polling для прослушивания входящих обновлений от Telegram.
-    /// Метод не блокирует выполнение, StartReceiving запускает фоновую задачу внутри себя.
-    /// </summary>
     public void StartReceiving(CancellationToken cancellationToken)
     {
         var receiverOptions = new ReceiverOptions
@@ -48,34 +50,81 @@ public class TelegramBotService
         _logger.LogInformation("Telegram Bot started receiving updates.");
     }
 
-    /// <summary>
-    /// Основной обработчик входящих обновлений от Telegram.
-    /// </summary>
     private async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
     {
-        // Извлекаем сообщение и его текст.
-        if (update.Message is not { } message || message.Text is not { } messageText)
+        if (update.Message is not { } message)
             return;
 
         var chatId = message.Chat.Id;
-        _logger.LogInformation("Received message '{MessageText}' in chat {ChatId}.", messageText, chatId);
+        var threadId = message.MessageThreadId;
+
+        // Режим отладки: Если сообщение из группы, выводим ID, чтобы пользователь мог добавить их в конфиг.
+        if (message.Chat.Type is ChatType.Group or ChatType.Supergroup)
+        {
+            _logger.LogWarning("Group Message Detected! ChatId: {ChatId}, ThreadId: {ThreadId}, GroupName: {Title}", 
+                chatId, threadId, message.Chat.Title);
+            return;
+        }
+
+        // Если это личное сообщение, но без текста (поддержку медиа добавим позже)
+        if (message.Text is not { } messageText)
+        {
+            await botClient.SendMessage(
+                chatId: chatId,
+                text: "Пока я понимаю только текстовые сообщения.",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        _logger.LogInformation("Received private message: '{MessageText}'", messageText);
 
         // Передаем текст в классификатор (Gemini)
-        var category = await _messageClassifier.ClassifyAsync(messageText, cancellationToken);
+        var destinationId = await _messageClassifier.ClassifyAsync(messageText, cancellationToken);
 
-        // Формируем ответ с указанием определенной категории
-        var responseText = $"[{category}] Вы написали: {messageText}";
+        if (destinationId == null)
+        {
+            await botClient.SendMessage(
+                chatId: chatId,
+                text: "Не удалось определить подходящий маршрут для этого сообщения.",
+                cancellationToken: cancellationToken);
+            return;
+        }
 
-        // Отправляем ответ пользователю
-        await botClient.SendMessage(
-            chatId: chatId,
-            text: responseText,
-            cancellationToken: cancellationToken);
+        var destination = _routingOptions.Destinations.FirstOrDefault(d => d.Id == destinationId);
+        if (destination == null || destination.ChatId == 0)
+        {
+            await botClient.SendMessage(
+                chatId: chatId,
+                text: $"Маршрут '{destinationId}' определен, но он не настроен (отсутствует ChatId в конфиге).",
+                cancellationToken: cancellationToken);
+            return;
+        }
+
+        try
+        {
+            // Используем CopyMessage, чтобы переслать сообщение "от имени бота" в нужную группу и топик
+            await botClient.CopyMessage(
+                chatId: destination.ChatId,
+                fromChatId: chatId,
+                messageId: message.MessageId,
+                messageThreadId: destination.ThreadId == 0 ? null : destination.ThreadId,
+                cancellationToken: cancellationToken);
+
+            await botClient.SendMessage(
+                chatId: chatId,
+                text: $"✅ Отправлено в: {destination.GroupName} -> {destination.TopicName}",
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to copy message to destination {DestinationId}", destination.Id);
+            await botClient.SendMessage(
+                chatId: chatId,
+                text: $"❌ Ошибка при отправке в топик '{destination.TopicName}'. Проверьте логи (возможно, бот не добавлен в группу).",
+                cancellationToken: cancellationToken);
+        }
     }
 
-    /// <summary>
-    /// Обработчик ошибок, возникающих в процессе Long Polling или при обращении к API Telegram.
-    /// </summary>
     private Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
     {
         var errorMessage = exception switch

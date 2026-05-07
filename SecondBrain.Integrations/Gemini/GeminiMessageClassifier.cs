@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SecondBrain.Core.Interfaces;
 using SecondBrain.Domain;
+using System.Text;
 
 namespace SecondBrain.Integrations.Gemini;
 
@@ -14,34 +15,50 @@ public class GeminiMessageClassifier : IMessageClassifier
 {
     private readonly Client _client;
     private readonly GeminiOptions _options;
+    private readonly RoutingOptions _routingOptions;
     private readonly ILogger<GeminiMessageClassifier> _logger;
 
     public GeminiMessageClassifier(
         IOptions<GeminiOptions> options,
+        IOptions<RoutingOptions> routingOptions,
         ILogger<GeminiMessageClassifier> logger)
     {
         _options = options.Value;
+        _routingOptions = routingOptions.Value;
         _logger = logger;
         
         // Создаем клиент, передавая ключ напрямую
         _client = new Client(apiKey: _options.ApiKey);
     }
 
-    public async Task<MessageCategory> ClassifyAsync(string text, CancellationToken cancellationToken = default)
+    public async Task<string?> ClassifyAsync(string text, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(text))
-            return MessageCategory.Other;
+        if (string.IsNullOrWhiteSpace(text) || _routingOptions.Destinations.Count == 0)
+            return null;
 
         try
         {
-            var systemInstruction = "Ты — классификатор текста. Твоя единственная задача: прочитать сообщение пользователя и вернуть ОДНО слово-категорию на английском из списка: Task, Note, Finance, Other. Больше ничего не пиши. Task - это задачи или дела. Note - просто полезная информация, заметки. Finance - покупки, траты, доходы. Other - если ничто не подходит.";
+            var sb = new StringBuilder();
+            sb.AppendLine("Ты — классификатор текста. Твоя единственная задача: прочитать сообщение пользователя и вернуть ОДНО слово — идентификатор (Id) подходящего маршрута из списка ниже.");
+            sb.AppendLine("Если ни один маршрут не подходит, верни слово 'null'. Никаких других слов или объяснений писать нельзя.");
+            sb.AppendLine();
+            sb.AppendLine("Доступные маршруты:");
+            
+            foreach (var dest in _routingOptions.Destinations)
+            {
+                sb.AppendLine($"- Id: {dest.Id}");
+                sb.AppendLine($"  Группа: {dest.GroupName}");
+                sb.AppendLine($"  Топик: {dest.TopicName}");
+                sb.AppendLine($"  Описание: {dest.Description}");
+                sb.AppendLine();
+            }
 
             var config = new GenerateContentConfig
             {
                 SystemInstruction = new Content
                 {
                     Role = "system",
-                    Parts = new List<Part> { new Part { Text = systemInstruction } }
+                    Parts = new List<Part> { new Part { Text = sb.ToString() } }
                 }
             };
 
@@ -55,17 +72,17 @@ public class GeminiMessageClassifier : IMessageClassifier
 
             _logger.LogInformation("Gemini classified message as: '{Answer}'", answerText);
 
-            if (Enum.TryParse<MessageCategory>(answerText, true, out var category))
-            {
-                return category;
-            }
+            if (answerText == "null" || string.IsNullOrWhiteSpace(answerText))
+                return null;
 
-            return MessageCategory.Other;
+            // Проверяем, существует ли такой Id реально
+            var destination = _routingOptions.Destinations.FirstOrDefault(d => d.Id.Equals(answerText, StringComparison.OrdinalIgnoreCase));
+            return destination?.Id;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error while classifying message via Google.GenAI API.");
-            return MessageCategory.Other;
+            return null;
         }
     }
 }

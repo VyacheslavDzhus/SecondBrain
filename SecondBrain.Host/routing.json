@@ -1,0 +1,108 @@
+{
+  "Destinations": [
+    {
+      "Id": "dzhus_notes",
+      "GroupName": "Dzhus(Я)",
+      "TopicName": "Личные заметки",
+      "Description": "Личные заметки, повседневные мысли, идеи, которые не подходят в другие категории.",
+      "ChatId": -1003804790247,
+      "ThreadId": 17
+    },
+    {
+      "Id": "dzhus_useful",
+      "GroupName": "Dzhus(Я)",
+      "TopicName": "Полезное",
+      "Description": "Полезная информация, ссылки, лайфхаки, советы.",
+      "ChatId": -1003804790247,
+      "ThreadId": 20
+    },
+    {
+      "Id": "dzhus_docs",
+      "GroupName": "Dzhus(Я)",
+      "TopicName": "Документы",
+      "Description": "Документы, сканы, паспорта, договоры, важные текстовые записи.",
+      "ChatId": -1003804790247,
+      "ThreadId": 15
+    },
+    {
+      "Id": "career_note",
+      "GroupName": "Карьера и Net",
+      "TopicName": "Заметка",
+      "Description": "Заметки по работе, программированию, архитектуре, технологиям.",
+      "ChatId": -1003841041103,
+      "ThreadId": 14
+    },
+    {
+      "Id": "career_important",
+      "GroupName": "Карьера и Net",
+      "TopicName": "Важно",
+      "Description": "Важная информация по карьере, срочные рабочие вопросы, дедлайны.",
+      "ChatId": -1003841041103,
+      "ThreadId": 37
+    },
+    {
+      "Id": "career_plans",
+      "GroupName": "Карьера и Net",
+      "TopicName": "Планы и цели",
+      "Description": "Глобальные цели по развитию карьеры, планы на изучение технологий, сертификации.",
+      "ChatId": -1003841041103,
+      "ThreadId": 22
+    },
+    {
+      "Id": "career_drafts",
+      "GroupName": "Карьера и Net",
+      "TopicName": "Заготовки для работы",
+      "Description": "Код, скрипты, сниппеты, шаблоны документов для рабочих проектов.",
+      "ChatId": -1003841041103,
+      "ThreadId": 16
+    },
+    {
+      "Id": "career_shortcut",
+      "GroupName": "Карьера и Net",
+      "TopicName": "ShortCut",
+      "Description": "Быстрые ссылки, горячие клавиши, шпаргалки для работы.",
+      "ChatId": -1003841041103,
+      "ThreadId": 24
+    },
+    {
+      "Id": "psycho_diana",
+      "GroupName": "Психология",
+      "TopicName": "Диана",
+      "Description": "Вся информация, связанная с девушкой (Диана). Подарки, идеи, предпочтения, мысли.",
+      "ChatId": -1003768183291,
+      "ThreadId": 5
+    },
+    {
+      "Id": "psycho_notes",
+      "GroupName": "Психология",
+      "TopicName": "Личные заметки",
+      "Description": "Заметки по психологии, саморазвитию, рефлексия, эмоции.",
+      "ChatId": -1003768183291,
+      "ThreadId": 3
+    },
+    {
+      "Id": "finance_bills",
+      "GroupName": "Финансы",
+      "TopicName": "Комуналка",
+      "Description": "Расходы на коммунальные услуги, счетчики, квартплата.",
+      "ChatId": -1003844519063,
+      "ThreadId": 3
+    },
+    {
+      "Id": "finance_wedding",
+      "GroupName": "Финансы",
+      "TopicName": "Свадьба",
+      "Description": "Накопления и расходы на организацию свадьбы.",
+      "ChatId": -1003844519063,
+      "ThreadId": 7
+    },
+    {
+      "Id": "finance_monthly",
+      "GroupName": "Финансы",
+      "TopicName": "Месячные траты",
+      "Description": "Повседневные расходы, еда, транспорт, покупки на месяц.",
+      "ChatId": -1003844519063,
+      "ThreadId": 5
+    }
+  ]
+}

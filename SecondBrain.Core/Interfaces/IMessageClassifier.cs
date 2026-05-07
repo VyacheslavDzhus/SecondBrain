@@ -1,5 +1,3 @@
-using SecondBrain.Domain;
-
 namespace SecondBrain.Core.Interfaces;
 
 /// <summary>
@@ -8,10 +6,10 @@ namespace SecondBrain.Core.Interfaces;
 public interface IMessageClassifier
 {
     /// <summary>
-    /// Анализирует текст и возвращает категорию сообщения.
+    /// Анализирует текст и возвращает идентификатор подходящего маршрута (топика).
     /// </summary>
     /// <param name="text">Входящий текст (например, из Telegram).</param>
     /// <param name="cancellationToken">Токен отмены.</param>
-    /// <returns>Категория сообщения (Task, Note, Finance, Other).</returns>
-    Task<MessageCategory> ClassifyAsync(string text, CancellationToken cancellationToken = default);
+    /// <returns>Строковый ID маршрута (например, "dzhus_notes") или null, если не подошло ничего.</returns>
+    Task<string?> ClassifyAsync(string text, CancellationToken cancellationToken = default);
 }

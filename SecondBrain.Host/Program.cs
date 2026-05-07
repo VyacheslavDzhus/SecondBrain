@@ -1,4 +1,5 @@
 using SecondBrain.Core.Interfaces;
+using SecondBrain.Domain;
 using SecondBrain.Host;
 using SecondBrain.Integrations.Gemini;
 using SecondBrain.Telegram;
@@ -19,6 +20,10 @@ builder.Services.AddHttpClient("telegram_bot_client")
         TelegramBotClientOptions options = new(botToken);
         return new TelegramBotClient(options, httpClient);
     });
+
+// --- Настройка маршрутизации (Topics) ---
+builder.Configuration.AddJsonFile("routing.json", optional: false, reloadOnChange: true);
+builder.Services.Configure<RoutingOptions>(builder.Configuration);
 
 // --- Настройка Gemini ---
 builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection("Gemini"));
