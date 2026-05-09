@@ -31,26 +31,33 @@ public class GeminiMessageClassifier : IMessageClassifier
         _client = new Client(apiKey: _options.ApiKey);
     }
 
-    public async Task<string?> ClassifyAsync(string text, CancellationToken cancellationToken = default)
+    public async Task<MessageAnalysisResult?> ClassifyAsync(string? text, byte[]? audioData, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(text) || _routingOptions.Destinations.Count == 0)
+        if (string.IsNullOrWhiteSpace(text) && (audioData == null || audioData.Length == 0))
+            return null;
+
+        if (_routingOptions.Destinations.Count == 0)
             return null;
 
         try
         {
             var sb = new StringBuilder();
-            sb.AppendLine("Ты — классификатор текста. Твоя единственная задача: прочитать сообщение пользователя и вернуть ОДНО слово — идентификатор (Id) подходящего маршрута из списка ниже.");
-            sb.AppendLine("Если ни один маршрут не подходит, верни слово 'null'. Никаких других слов или объяснений писать нельзя.");
+            sb.AppendLine("Ты — умный ассистент-классификатор и личный редактор. Твоя задача — проанализировать сообщение пользователя.");
+            sb.AppendLine("Если пользователь отправил аудио, внимательно прослушай его.");
+            sb.AppendLine("1. Выбери наиболее подходящий маршрут (Id) из списка доступных. Если ничего не подходит, верни null.");
+            sb.AppendLine("2. Проанализируй текст или аудио.");
+            sb.AppendLine("   - Если это аудиосообщение, сделай транскрибацию и улучши её, сделай текст более структурированным, грамотным и понятным.");
+            sb.AppendLine("   - Если это короткий факт или задача (например, 'Купил хлеб 50р'), оставь текст как есть, исправив только опечатки.");
+            sb.AppendLine("   - Если это длинная или сумбурная мысль, идея, черновик — переформулируй её, сделай текст более структурированным (используй абзацы, списки с буллитами), грамотным и понятным.");
+            sb.AppendLine();
+            sb.AppendLine("Ответ верни СТРОГО в формате JSON с двумя строковыми полями: 'DestinationId' и 'ImprovedText'. Никаких других слов или форматирования быть не должно.");
             sb.AppendLine();
             sb.AppendLine("Доступные маршруты:");
             
             foreach (var dest in _routingOptions.Destinations)
             {
-                sb.AppendLine($"- Id: {dest.Id}");
-                sb.AppendLine($"  Группа: {dest.GroupName}");
-                sb.AppendLine($"  Топик: {dest.TopicName}");
+                sb.AppendLine($"- Id: {dest.Id} | Группа: {dest.GroupName} | Топик: {dest.TopicName}");
                 sb.AppendLine($"  Описание: {dest.Description}");
-                sb.AppendLine();
             }
 
             var config = new GenerateContentConfig
@@ -59,29 +66,62 @@ public class GeminiMessageClassifier : IMessageClassifier
                 {
                     Role = "system",
                     Parts = new List<Part> { new Part { Text = sb.ToString() } }
-                }
+                },
+                ResponseMimeType = "application/json"
             };
+
+            var userParts = new List<Part>();
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                userParts.Add(new Part { Text = text });
+            }
+            if (audioData != null && audioData.Length > 0)
+            {
+                userParts.Add(new Part
+                {
+                    InlineData = new Blob { MimeType = "audio/ogg", Data = audioData }
+                });
+                
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    userParts.Add(new Part { Text = "Пожалуйста, расшифруй это аудиосообщение и отформатируй его согласно системным инструкциям." });
+                }
+            }
 
             var response = await _client.Models.GenerateContentAsync(
                 model: _options.ModelId,
-                contents: text,
+                contents: new List<Content> { new Content { Role = "user", Parts = userParts } },
                 config: config,
                 cancellationToken: cancellationToken);
 
             var answerText = response.Text?.Trim();
 
-            _logger.LogInformation("Gemini classified message as: '{Answer}'", answerText);
+            _logger.LogInformation("Gemini raw response: '{Answer}'", answerText);
 
-            if (answerText == "null" || string.IsNullOrWhiteSpace(answerText))
+            if (string.IsNullOrWhiteSpace(answerText))
+                return null;
+
+            // Парсим JSON-ответ от Gemini
+            var result = System.Text.Json.JsonSerializer.Deserialize<MessageAnalysisResult>(
+                answerText, 
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            if (result == null || string.IsNullOrWhiteSpace(result.DestinationId) || result.DestinationId == "null")
                 return null;
 
             // Проверяем, существует ли такой Id реально
-            var destination = _routingOptions.Destinations.FirstOrDefault(d => d.Id.Equals(answerText, StringComparison.OrdinalIgnoreCase));
-            return destination?.Id;
+            var destination = _routingOptions.Destinations.FirstOrDefault(d => d.Id.Equals(result.DestinationId, StringComparison.OrdinalIgnoreCase));
+            if (destination == null)
+            {
+                _logger.LogWarning("Gemini returned unknown DestinationId: {Id}", result.DestinationId);
+                return null;
+            }
+
+            return result;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error while classifying message via Google.GenAI API.");
+            _logger.LogError(ex, "Error while classifying and improving message via Google.GenAI API.");
             return null;
         }
     }

@@ -1,3 +1,5 @@
+using SecondBrain.Domain;
+
 namespace SecondBrain.Core.Interfaces;
 
 /// <summary>
@@ -6,10 +8,11 @@ namespace SecondBrain.Core.Interfaces;
 public interface IMessageClassifier
 {
     /// <summary>
-    /// Анализирует текст и возвращает идентификатор подходящего маршрута (топика).
+    /// Анализирует текст или аудио, определяет маршрут и улучшает текст (если требуется).
     /// </summary>
-    /// <param name="text">Входящий текст (например, из Telegram).</param>
+    /// <param name="text">Входящий текст (может быть null, если это голосовое сообщение).</param>
+    /// <param name="audioData">Массив байтов голосового сообщения (может быть null).</param>
     /// <param name="cancellationToken">Токен отмены.</param>
-    /// <returns>Строковый ID маршрута (например, "dzhus_notes") или null, если не подошло ничего.</returns>
-    Task<string?> ClassifyAsync(string text, CancellationToken cancellationToken = default);
+    /// <returns>Результат анализа или null, если подходящий топик не найден.</returns>
+    Task<MessageAnalysisResult?> ClassifyAsync(string? text, byte[]? audioData, CancellationToken cancellationToken = default);
 }

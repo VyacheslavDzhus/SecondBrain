@@ -66,22 +66,39 @@ public class TelegramBotService
             return;
         }
 
-        // Если это личное сообщение, но без текста (поддержку медиа добавим позже)
-        if (message.Text is not { } messageText)
+        string? messageText = message.Text ?? message.Caption;
+        byte[]? audioData = null;
+
+        // Обработка голосовых сообщений
+        if (message.Voice is { } voice)
+        {
+            _logger.LogInformation("Received voice message. Downloading...");
+            var file = await botClient.GetFile(voice.FileId, cancellationToken);
+            if (file.FilePath != null)
+            {
+                using var ms = new MemoryStream();
+                await botClient.DownloadFile(file.FilePath, ms, cancellationToken);
+                audioData = ms.ToArray();
+                _logger.LogInformation("Voice message downloaded. Size: {Size} bytes", audioData.Length);
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(messageText))
         {
             await botClient.SendMessage(
                 chatId: chatId,
-                text: "Пока я понимаю только текстовые сообщения.",
+                text: "Пока я понимаю только текстовые и голосовые сообщения.",
                 cancellationToken: cancellationToken);
             return;
         }
+        else
+        {
+            _logger.LogInformation("Received private text message: '{MessageText}'", messageText);
+        }
 
-        _logger.LogInformation("Received private message: '{MessageText}'", messageText);
+        // Передаем текст и аудио в классификатор (Gemini)
+        var analysisResult = await _messageClassifier.ClassifyAsync(messageText, audioData, cancellationToken);
 
-        // Передаем текст в классификатор (Gemini)
-        var destinationId = await _messageClassifier.ClassifyAsync(messageText, cancellationToken);
-
-        if (destinationId == null)
+        if (analysisResult == null || string.IsNullOrWhiteSpace(analysisResult.DestinationId))
         {
             await botClient.SendMessage(
                 chatId: chatId,
@@ -90,24 +107,27 @@ public class TelegramBotService
             return;
         }
 
-        var destination = _routingOptions.Destinations.FirstOrDefault(d => d.Id == destinationId);
+        var destination = _routingOptions.Destinations.FirstOrDefault(d => d.Id == analysisResult.DestinationId);
         if (destination == null || destination.ChatId == 0)
         {
             await botClient.SendMessage(
                 chatId: chatId,
-                text: $"Маршрут '{destinationId}' определен, но он не настроен (отсутствует ChatId в конфиге).",
+                text: $"Маршрут '{analysisResult.DestinationId}' определен, но он не настроен (отсутствует ChatId в конфиге).",
                 cancellationToken: cancellationToken);
             return;
         }
 
         try
         {
-            // Используем CopyMessage, чтобы переслать сообщение "от имени бота" в нужную группу и топик
-            await botClient.CopyMessage(
+            var textToSend = !string.IsNullOrWhiteSpace(analysisResult.ImprovedText) 
+                ? analysisResult.ImprovedText 
+                : (messageText ?? "🎙️ Голосовое сообщение обработано, но текст пуст.");
+
+            // Отправляем улучшенный текст новым сообщением от имени бота
+            await botClient.SendMessage(
                 chatId: destination.ChatId,
-                fromChatId: chatId,
-                messageId: message.MessageId,
                 messageThreadId: destination.ThreadId == 0 ? null : destination.ThreadId,
+                text: textToSend,
                 cancellationToken: cancellationToken);
 
             await botClient.SendMessage(
