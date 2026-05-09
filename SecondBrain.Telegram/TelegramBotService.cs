@@ -68,6 +68,7 @@ public class TelegramBotService
 
         string? messageText = message.Text ?? message.Caption;
         byte[]? audioData = null;
+        string? photoFileId = null;
 
         // Обработка голосовых сообщений
         if (message.Voice is { } voice)
@@ -82,11 +83,16 @@ public class TelegramBotService
                 _logger.LogInformation("Voice message downloaded. Size: {Size} bytes", audioData.Length);
             }
         }
+        else if (message.Photo is { Length: > 0 } photo)
+        {
+            _logger.LogInformation("Received photo message. Extracting highest resolution file ID.");
+            photoFileId = photo.Last().FileId;
+        }
         else if (string.IsNullOrWhiteSpace(messageText))
         {
             await botClient.SendMessage(
                 chatId: chatId,
-                text: "Пока я понимаю только текстовые и голосовые сообщения.",
+                text: "Пока я понимаю только текстовые сообщения, голосовые и фото с подписью.",
                 cancellationToken: cancellationToken);
             return;
         }
@@ -121,15 +127,29 @@ public class TelegramBotService
         {
             var textToSend = !string.IsNullOrWhiteSpace(analysisResult.ImprovedText) 
                 ? analysisResult.ImprovedText 
-                : (messageText ?? "🎙️ Голосовое сообщение обработано, но текст пуст.");
+                : (messageText ?? "🎙️ Сообщение обработано, но текст пуст.");
 
-            // Отправляем улучшенный текст новым сообщением от имени бота
-            await botClient.SendMessage(
-                chatId: destination.ChatId,
-                messageThreadId: destination.ThreadId == 0 ? null : destination.ThreadId,
-                text: textToSend,
-                parseMode: global::Telegram.Bot.Types.Enums.ParseMode.Html,
-                cancellationToken: cancellationToken);
+            if (photoFileId != null)
+            {
+                // Отправляем фото с улучшенным текстом в качестве подписи
+                await botClient.SendPhoto(
+                    chatId: destination.ChatId,
+                    photo: InputFile.FromFileId(photoFileId),
+                    caption: textToSend,
+                    messageThreadId: destination.ThreadId == 0 ? null : destination.ThreadId,
+                    parseMode: global::Telegram.Bot.Types.Enums.ParseMode.Html,
+                    cancellationToken: cancellationToken);
+            }
+            else
+            {
+                // Отправляем улучшенный текст новым сообщением от имени бота
+                await botClient.SendMessage(
+                    chatId: destination.ChatId,
+                    messageThreadId: destination.ThreadId == 0 ? null : destination.ThreadId,
+                    text: textToSend,
+                    parseMode: global::Telegram.Bot.Types.Enums.ParseMode.Html,
+                    cancellationToken: cancellationToken);
+            }
 
             await botClient.SendMessage(
                 chatId: chatId,
