@@ -128,6 +128,7 @@ public class TelegramBotService
                 chatId: destination.ChatId,
                 messageThreadId: destination.ThreadId == 0 ? null : destination.ThreadId,
                 text: textToSend,
+                parseMode: global::Telegram.Bot.Types.Enums.ParseMode.Html,
                 cancellationToken: cancellationToken);
 
             await botClient.SendMessage(
